@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "369913209285",
+    "project_id": "edu-notes-upb",
+    "storage_bucket": "edu-notes-upb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:369913209285:android:6de436e982e0ea7f30ebac",
+        "android_client_info": {
+          "package_name": "com.example.edu_note"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuf52F4Y8klRLd7N6QZFzSpsbhH6FMNb0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
