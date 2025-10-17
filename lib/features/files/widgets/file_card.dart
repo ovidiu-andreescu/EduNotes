@@ -23,13 +23,15 @@ class FileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = entry.type == EntryType.note ? Icons.description : Icons.image;
     final sub = 'Owner: $ownerEmail • Shared: ${entry.sharedWith.length}';
+    final bool hasActions = onShare != null || onUnshare != null || onDelete != null;
     return Card(
       child: ListTile(
         leading: Icon(icon),
         title: Text(entry.title),
         subtitle: Text(sub),
         onTap: onOpen,
-        trailing: PopupMenuButton<String>(
+        trailing: hasActions
+          ? PopupMenuButton<String>(
           onSelected: (v) {
             switch (v) {
               case 'share':
@@ -42,12 +44,20 @@ class FileCard extends StatelessWidget {
                 onDelete?.call();
             }
           },
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: 'share', child: Text('Share...')),
-            const PopupMenuItem(value: 'unshare', child: Text('Disable sharing...')),
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-        ),
+          itemBuilder: (context) {
+            final List<PopupMenuEntry<String>> items = [];
+            if (onShare != null) {
+              items.add(const PopupMenuItem(value: 'share', child: Text('Share...')));
+            }
+            if (onUnshare != null) {
+              items.add(const PopupMenuItem(value: 'unshare', child: Text('Disable sharing...')));
+            }
+            if (onDelete != null) {
+              items.add(const PopupMenuItem(value: 'delete', child: Text('Delete')));
+            }
+            return items;
+          },
+        ) : null,
       ),
     );
   }
