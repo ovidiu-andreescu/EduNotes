@@ -18,6 +18,7 @@ class MyFilesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final filesRepo = context.read<FilesRepository>();
     final user = context.read<AuthCubit>().currentUser!;
+    final ownerEmail = user.email;
 
     return Scaffold(
       body: BlocBuilder<FilesCubit, FilesState>(
@@ -34,6 +35,7 @@ class MyFilesPage extends StatelessWidget {
               final e = files[i];
               return FileCard(
                 entry: e,
+                ownerEmail: ownerEmail,
                 onOpen: () {
                   if (e is TextNote) {
                     Navigator.push(context, MaterialPageRoute(

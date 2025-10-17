@@ -3,6 +3,7 @@ import '../../../data/models.dart';
 
 class FileCard extends StatelessWidget {
   final EntryBase entry;
+  final String ownerEmail;
   final VoidCallback? onOpen;
   final VoidCallback? onShare;
   final VoidCallback? onUnshare;
@@ -11,6 +12,7 @@ class FileCard extends StatelessWidget {
   const FileCard({
     super.key,
     required this.entry,
+    required this.ownerEmail,
     this.onOpen,
     this.onShare,
     this.onUnshare,
@@ -20,7 +22,7 @@ class FileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = entry.type == EntryType.note ? Icons.description : Icons.image;
-    final sub = 'Owner: ${entry.ownerId} • Shared: ${entry.sharedWith.length}';
+    final sub = 'Owner: $ownerEmail • Shared: ${entry.sharedWith.length}';
     return Card(
       child: ListTile(
         leading: Icon(icon),

@@ -6,6 +6,10 @@ import 'image_view_page.dart';
 import 'note_editor_page.dart';
 import 'widgets/file_card.dart';
 
+String _mockEmailFromId(String userId) {
+  return '${userId.substring(0, 4).toLowerCase()}...@share-owner.com';
+}
+
 class SharedWithMePage extends StatelessWidget {
   const SharedWithMePage({super.key});
 
@@ -21,8 +25,10 @@ class SharedWithMePage extends StatelessWidget {
           itemCount: files.length,
           itemBuilder: (context, i) {
             final e = files[i];
+            final ownerEmail = _mockEmailFromId(e.ownerId);
             return FileCard(
               entry: e,
+              ownerEmail: ownerEmail,
               onOpen: () {
                 if (e is TextNote) {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => NoteEditorPage(noteId: e.id)));
