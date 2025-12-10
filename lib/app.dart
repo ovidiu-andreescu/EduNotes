@@ -5,6 +5,7 @@ import 'features/auth/login_page.dart';
 import 'features/files/my_files_page.dart';
 import 'features/files/shared_with_me_page.dart';
 import 'features/files/files_cubit.dart';
+import 'dart:io';
 
 class EduNotesApp extends StatelessWidget {
   const EduNotesApp({super.key});
@@ -53,6 +54,49 @@ class _HomeShellState extends State<_HomeShell> {
     }
   }
 
+  Future<void> _confirmLogout() async {
+    bool isOffline = false;
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        isOffline = true;
+      }
+    } on SocketException catch (_) {
+      isOffline = true;
+    }
+
+    if (!mounted) return;
+
+    if (isOffline) {
+      final shouldLogout = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('⚠️ Offline Warning'),
+          content: const Text(
+              'You are currently offline.\n\n'
+                  'Any changes you made recently have not been saved to the cloud yet.\n\n'
+                  'If you log out now, you will lose the changes.\n\n'
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Log Out Anyway'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldLogout != true) return;
+    }
+
+    if (mounted) context.read<AuthCubit>().signOut();
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = const [MyFilesPage(), SharedWithMePage()];
@@ -62,7 +106,7 @@ class _HomeShellState extends State<_HomeShell> {
         actions: [
           IconButton(
             tooltip: 'Logout',
-            onPressed: () => context.read<AuthCubit>().signOut(),
+            onPressed: _confirmLogout,
             icon: const Icon(Icons.logout),
           )
         ],
