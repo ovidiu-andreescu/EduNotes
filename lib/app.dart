@@ -71,7 +71,7 @@ class _HomeShellState extends State<_HomeShell> {
       final shouldLogout = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('⚠️ Offline Warning'),
+          title: const Text('Offline Warning'),
           content: const Text(
               'You are currently offline.\n\n'
                   'Any changes you made recently have not been saved to the cloud yet.\n\n'

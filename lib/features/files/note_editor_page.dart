@@ -24,115 +24,147 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     super.dispose();
   }
 
+  Future<void> _saveAndExit() async {
+    final repo = context.read<FilesRepository>();
+    final user = context.read<AuthCubit>().currentUser!;
+
+    if (editing) {
+      try {
+        await repo.updateNoteContent(
+          noteId: widget.noteId,
+          newContent: _controller.text,
+          editorUserId: user.id,
+        );
+        await repo.releaseLock(noteId: widget.noteId, userId: user.id);
+      } catch (e) {
+        print('Error auto-saving on exit: $e');
+      }
+    }
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = context.read<FilesRepository>();
     final user = context.read<AuthCubit>().currentUser!;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Note'),
-        actions: [
-          if (!editing)
-            IconButton(
-              tooltip: 'Edit',
-              icon: const Icon(Icons.edit),
-              onPressed: () async {
-                final note = _maybeGetNote(repo);
-                if (note == null) return; // not loaded yet
-                if (note.lockedByUserId != null && note.lockedByUserId != user.id) {
-                  setState(() => error = 'Note is locked by another user.');
-                  return;
-                }
-                final ok = await repo.acquireLock(noteId: widget.noteId, userId: user.id);
-                if (ok) {
-                  setState(() {
-                    error = null;
-                    editing = true;
-                    _controller.text = note.content; // seed editor with latest
-                  });
-                } else {
-                  setState(() => error = 'Note is locked by another user.');
-                }
-              },
-            ),
-          if (editing)
-            IconButton(
-              tooltip: 'Save',
-              icon: const Icon(Icons.save),
-              onPressed: () async {
-                try {
-                  await repo.updateNoteContent(
-                    noteId: widget.noteId,
-                    newContent: _controller.text,
-                    editorUserId: user.id,
-                  );
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        await _saveAndExit();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Note'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _saveAndExit,
+          ),
+          actions: [
+            if (!editing)
+              IconButton(
+                tooltip: 'Edit',
+                icon: const Icon(Icons.edit),
+                onPressed: () async {
+                  final note = _maybeGetNote(repo);
+                  if (note == null) return;
+                  if (note.lockedByUserId != null && note.lockedByUserId != user.id) {
+                    setState(() => error = 'Note is locked by another user.');
+                    return;
+                  }
+                  final ok = await repo.acquireLock(noteId: widget.noteId, userId: user.id);
+                  if (ok) {
+                    setState(() {
+                      error = null;
+                      editing = true;
+                      _controller.text = note.content;
+                    });
+                  } else {
+                    setState(() => error = 'Note is locked by another user.');
+                  }
+                },
+              ),
+            if (editing)
+              IconButton(
+                tooltip: 'Save',
+                icon: const Icon(Icons.save),
+                onPressed: () async {
+                  try {
+                    await repo.updateNoteContent(
+                      noteId: widget.noteId,
+                      newContent: _controller.text,
+                      editorUserId: user.id,
+                    );
+                    await repo.releaseLock(noteId: widget.noteId, userId: user.id);
+                    setState(() {
+                      editing = false;
+                      error = null;
+                    });
+                  } catch (e) {
+                    setState(() => error = e.toString());
+                  }
+                },
+              ),
+            if (editing)
+              IconButton(
+                tooltip: 'Cancel',
+                icon: const Icon(Icons.close),
+                onPressed: () async {
                   await repo.releaseLock(noteId: widget.noteId, userId: user.id);
                   setState(() {
                     editing = false;
                     error = null;
                   });
-                } catch (e) {
-                  setState(() => error = e.toString());
-                }
-              },
-            ),
-          if (editing)
-            IconButton(
-              tooltip: 'Cancel',
-              icon: const Icon(Icons.close),
-              onPressed: () async {
-                await repo.releaseLock(noteId: widget.noteId, userId: user.id);
-                setState(() {
-                  editing = false;
-                  error = null;
-                });
-              },
-            ),
-        ],
-      ),
-      body: StreamBuilder<void>(
-        // Rebuild view when files change (Firestore snapshots or mock)
-        stream: context.read<FilesRepository>().watchAll(),
-        builder: (context, _) {
-          final note = _maybeGetNote(repo);
-          if (note == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+                },
+              ),
+          ],
+        ),
+        body: StreamBuilder<void>(
+          stream: context.read<FilesRepository>().watchAll(),
+          builder: (context, _) {
+            final note = _maybeGetNote(repo);
+            if (note == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final lockedByOther =
-              note.lockedByUserId != null && note.lockedByUserId != user.id;
+            final lockedByOther =
+                note.lockedByUserId != null && note.lockedByUserId != user.id;
 
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (error != null) _Banner(error!, color: Colors.red),
-                if (lockedByOther) const _Banner('Read-only. Locked by another user.'),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: editing
-                      ? TextField(
-                    controller: _controller,
-                    expands: true,
-                    maxLines: null,
-                    minLines: null,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Write notes...',
-                    ),
-                  )
-                      : SingleChildScrollView(
-                    child: Text(
-                      note.content.isEmpty ? '(empty)' : note.content,
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (error != null) _Banner(error!, color: Colors.red),
+                  if (lockedByOther) const _Banner('Read-only. Locked by another user.'),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: editing
+                        ? TextField(
+                      controller: _controller,
+                      expands: true,
+                      maxLines: null,
+                      minLines: null,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: 'Write notes...',
+                      ),
+                    )
+                        : SingleChildScrollView(
+                      child: Text(
+                        note.content.isEmpty ? '(empty)' : note.content,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -142,7 +174,6 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
       final e = repo.getById(widget.noteId);
       return (e is TextNote) ? e : null;
     } catch (_) {
-      // Not in cache yet (e.g., just created; waiting for Firestore snapshot)
       return null;
     }
   }
