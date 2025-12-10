@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path_provider/path_provider.dart'; // Add this
-import 'package:path/path.dart' as path; // Add this
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 
 import 'models.dart';
 import 'files_repository.dart';
@@ -17,13 +17,15 @@ class FirebaseFilesRepository implements FilesRepository {
 
   StreamSubscription? _ownSub, _sharedSub;
   String? _uid;
+  String? _email;
 
   CollectionReference<Map<String, dynamic>> get _entries => _db.collection('entries');
 
   @override
-  void setActiveUser(String? uid) {
-    if (_uid == uid) return;
+  void setActiveUser(String? uid, String? email) {
+    if (_uid == uid && _email == email) return;
     _uid = uid;
+    _email = email;
 
     _ownSub?.cancel();
     _sharedSub?.cancel();
@@ -35,7 +37,10 @@ class FirebaseFilesRepository implements FilesRepository {
     }
 
     _ownSub = _entries.where('ownerId', isEqualTo: uid).snapshots().listen(_applySnap);
-    _sharedSub = _entries.where('sharedWith', arrayContains: uid).snapshots().listen(_applySnap);
+
+    if (email != null) {
+      _sharedSub = _entries.where('sharedWith', arrayContains: email).snapshots().listen(_applySnap);
+    }
 
     _syncPendingUploads(uid);
   }
@@ -44,11 +49,10 @@ class FirebaseFilesRepository implements FilesRepository {
     final snap = await _entries
         .where('ownerId', isEqualTo: uid)
         .where('type', isEqualTo: 'image')
-        .get(const GetOptions(source: Source.cache)); // fast check
+        .get(const GetOptions(source: Source.cache));
 
     for (final doc in snap.docs) {
       final url = doc.data()['imageUrl'] as String? ?? '';
-      // If it is a local path, it needs uploading
       if (url.startsWith('/')) {
         final file = File(url);
         if (await file.exists()) {
@@ -109,8 +113,8 @@ class FirebaseFilesRepository implements FilesRepository {
       _cache.values.where((e) => e.ownerId == uid).toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
   @override
-  List<EntryBase> sharedWithMe(String uid) =>
-      _cache.values.where((e) => e.sharedWith.contains(uid) && e.ownerId != uid).toList()
+  List<EntryBase> sharedWithMe(String email) =>
+      _cache.values.where((e) => e.sharedWith.contains(email)).toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
   @override
@@ -120,7 +124,6 @@ class FirebaseFilesRepository implements FilesRepository {
   Future<TextNote> createNote({required String ownerId, required String title}) async {
     final ref = _entries.doc();
     final now = FieldValue.serverTimestamp();
-
     await ref.set({
       'type': 'note',
       'ownerId': ownerId,
@@ -131,7 +134,6 @@ class FirebaseFilesRepository implements FilesRepository {
       'createdAt': now,
       'updatedAt': now,
     });
-
     return TextNote(
       id: ref.id,
       ownerId: ownerId,
@@ -151,19 +153,17 @@ class FirebaseFilesRepository implements FilesRepository {
   }) async {
     final ref = _entries.doc();
     final id = ref.id;
-
     final appDir = await getApplicationDocumentsDirectory();
     final fileName = '${id}_${path.basename(imagePathOrUrl)}';
     final savedImage = await File(imagePathOrUrl).copy('${appDir.path}/$fileName');
 
     final now = FieldValue.serverTimestamp();
-
     await ref.set({
       'type': 'image',
       'ownerId': ownerId,
       'title': title,
       'sharedWith': <String>[],
-      'imageUrl': savedImage.path, // <--- Local path initially
+      'imageUrl': savedImage.path,
       'createdAt': now,
       'updatedAt': now,
     });
@@ -184,9 +184,8 @@ class FirebaseFilesRepository implements FilesRepository {
   Future<void> _uploadImageInBackground(String id, File file, String ownerId) async {
     try {
       final ref = _storage.ref('noteImages/$id/${path.basename(file.path)}');
-      await ref.putFile(file); // This might hang or fail if offline
+      await ref.putFile(file);
       final url = await ref.getDownloadURL();
-
       await _entries.doc(id).update({
         'imageUrl': url,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -220,17 +219,23 @@ class FirebaseFilesRepository implements FilesRepository {
       return await _db.runTransaction((tx) async {
         final ref = _entries.doc(noteId);
         final snap = await tx.get(ref);
+
         if (!snap.exists) return false;
+
         final cur = snap.data()!;
         final lockedBy = cur['lockedByUserId'] as String?;
+
         if (lockedBy == null || lockedBy == userId) {
-          tx.update(ref, {'lockedByUserId': userId, 'updatedAt': FieldValue.serverTimestamp()});
+          tx.update(ref, {
+            'lockedByUserId': userId,
+            'updatedAt': FieldValue.serverTimestamp()
+          });
           return true;
         }
         return false;
       });
     } catch (e) {
-      print('Lock acquisition failed (offline?): $e');
+      print('Offline Mode: Bypassing lock check. Error: $e');
       return true;
     }
   }
@@ -244,17 +249,17 @@ class FirebaseFilesRepository implements FilesRepository {
   }
 
   @override
-  Future<void> shareWithUser({required String entryId, required String otherUserId}) async {
+  Future<void> shareWithUser({required String entryId, required String email}) async {
     await _entries.doc(entryId).update({
-      'sharedWith': FieldValue.arrayUnion([otherUserId]),
+      'sharedWith': FieldValue.arrayUnion([email]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   @override
-  Future<void> unshareWithUser({required String entryId, required String otherUserId}) async {
+  Future<void> unshareWithUser({required String entryId, required String email}) async {
     await _entries.doc(entryId).update({
-      'sharedWith': FieldValue.arrayRemove([otherUserId]),
+      'sharedWith': FieldValue.arrayRemove([email]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

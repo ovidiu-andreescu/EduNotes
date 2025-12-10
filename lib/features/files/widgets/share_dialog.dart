@@ -6,12 +6,14 @@ Future<String?> showShareDialog(BuildContext context) async {
   return showDialog<String>(
     context: context,
     builder: (_) => AlertDialog(
-      title: const Text('Share with (recipient UID)'),
+      title: const Text('Share by Email'),
       content: TextField(
         controller: controller,
+        keyboardType: TextInputType.emailAddress,
         decoration: const InputDecoration(
-          labelText: 'Recipient UID',
-          helperText: 'Temporary: paste the other user\'s Firebase UID',
+          labelText: 'Recipient Email',
+          helperText: 'Enter the exact email of the user',
+          prefixIcon: Icon(Icons.email),
         ),
       ),
       actions: [
@@ -22,7 +24,9 @@ Future<String?> showShareDialog(BuildContext context) async {
         FilledButton(
           onPressed: () {
             final v = controller.text.trim();
-            Navigator.pop(context, v.isEmpty ? null : v);
+            if (v.isNotEmpty && v.contains('@')) {
+              Navigator.pop(context, v);
+            }
           },
           child: const Text('Share'),
         ),

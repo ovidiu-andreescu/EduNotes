@@ -15,9 +15,9 @@ class EduNotesApp extends StatelessWidget {
       listener: (context, state) {
         final files = context.read<FilesCubit>();
         if (state is Authenticated) {
-          files.refresh(state.user.id);
+          files.refresh(state.user.id, state.user.email);
         } else {
-          files.refresh(null);
+          files.refresh(null, null);
         }
       },
       child: MaterialApp(
@@ -25,13 +25,12 @@ class EduNotesApp extends StatelessWidget {
         theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
         home: BlocBuilder<AuthCubit, AuthState>(
           builder: (context, state) {
-            if (state is Authenticated) return _HomeShell();
+            if (state is Authenticated) return const _HomeShell();
             return const LoginPage();
           },
         ),
       ),
     );
-
   }
 }
 

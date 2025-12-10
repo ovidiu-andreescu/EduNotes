@@ -48,14 +48,25 @@ class MyFilesPage extends StatelessWidget {
                   }
                 },
                 onShare: () async {
-                  final otherId = await showShareDialog(context);
-                  if (otherId != null) {
-                    await filesRepo.shareWithUser(entryId: e.id, otherUserId: otherId);
+                  final email = await showShareDialog(context);
+                  if (email != null) {
+                    await filesRepo.shareWithUser(entryId: e.id, email: email);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Shared with $email')),
+                      );
+                    }
                   }
                 },
                 onUnshare: () async {
-                  for (final uid in e.sharedWith) {
-                    await filesRepo.unshareWithUser(entryId: e.id, otherUserId: uid);
+                  // e.sharedWith now contains emails, so we loop through them
+                  for (final email in e.sharedWith) {
+                    await filesRepo.unshareWithUser(entryId: e.id, email: email);
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Sharing disabled')),
+                    );
                   }
                 },
                 onDelete: () async {

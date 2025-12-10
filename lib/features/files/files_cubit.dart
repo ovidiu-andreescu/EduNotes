@@ -26,12 +26,14 @@ class FilesCubit extends Cubit<FilesState> {
   final FilesRepository repo;
   StreamSubscription? _sub;
   String? _uid;
+  String? _email;
 
   FilesCubit(this.repo) : super(const FilesState());
 
-  Future<void> refresh([String? userId]) async {
-    if (userId != null) _uid = userId;
-    repo.setActiveUser(_uid);
+  Future<void> refresh([String? userId, String? email]) async {
+    _uid = userId;
+    _email = email;
+    repo.setActiveUser(_uid, _email);
 
     _sub?.cancel();
     if (_uid == null) {
@@ -41,7 +43,7 @@ class FilesCubit extends Cubit<FilesState> {
 
     _sub = repo.watchAll().listen((_) {
       final my = repo.myFiles(_uid!);
-      final shared = repo.sharedWithMe(_uid!);
+      final shared = _email != null ? repo.sharedWithMe(_email!) : <EntryBase>[];
       emit(FilesState(myFiles: my, sharedWithMe: shared, loading: false));
     });
   }
