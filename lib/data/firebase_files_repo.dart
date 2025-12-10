@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart'; // Add this
+import 'package:path/path.dart' as path; // Add this
 
 import 'models.dart';
 import 'files_repository.dart';
@@ -34,6 +36,26 @@ class FirebaseFilesRepository implements FilesRepository {
 
     _ownSub = _entries.where('ownerId', isEqualTo: uid).snapshots().listen(_applySnap);
     _sharedSub = _entries.where('sharedWith', arrayContains: uid).snapshots().listen(_applySnap);
+
+    _syncPendingUploads(uid);
+  }
+
+  Future<void> _syncPendingUploads(String uid) async {
+    final snap = await _entries
+        .where('ownerId', isEqualTo: uid)
+        .where('type', isEqualTo: 'image')
+        .get(const GetOptions(source: Source.cache)); // fast check
+
+    for (final doc in snap.docs) {
+      final url = doc.data()['imageUrl'] as String? ?? '';
+      // If it is a local path, it needs uploading
+      if (url.startsWith('/')) {
+        final file = File(url);
+        if (await file.exists()) {
+          _uploadImageInBackground(doc.id, file, uid);
+        }
+      }
+    }
   }
 
   void _applySnap(QuerySnapshot<Map<String, dynamic>> snap) {
@@ -98,6 +120,7 @@ class FirebaseFilesRepository implements FilesRepository {
   Future<TextNote> createNote({required String ownerId, required String title}) async {
     final ref = _entries.doc();
     final now = FieldValue.serverTimestamp();
+
     await ref.set({
       'type': 'note',
       'ownerId': ownerId,
@@ -108,6 +131,7 @@ class FirebaseFilesRepository implements FilesRepository {
       'createdAt': now,
       'updatedAt': now,
     });
+
     return TextNote(
       id: ref.id,
       ownerId: ownerId,
@@ -125,20 +149,27 @@ class FirebaseFilesRepository implements FilesRepository {
     required String title,
     required String imagePathOrUrl,
   }) async {
-    final file = File(imagePathOrUrl);
-    final id = _entries.doc().id;
-    final upload = await _storage.ref('noteImages/$id/${file.uri.pathSegments.last}').putFile(file);
-    final url = await upload.ref.getDownloadURL();
+    final ref = _entries.doc();
+    final id = ref.id;
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final fileName = '${id}_${path.basename(imagePathOrUrl)}';
+    final savedImage = await File(imagePathOrUrl).copy('${appDir.path}/$fileName');
+
     final now = FieldValue.serverTimestamp();
-    await _entries.doc(id).set({
+
+    await ref.set({
       'type': 'image',
       'ownerId': ownerId,
       'title': title,
       'sharedWith': <String>[],
-      'imageUrl': url,
+      'imageUrl': savedImage.path, // <--- Local path initially
       'createdAt': now,
       'updatedAt': now,
     });
+
+    _uploadImageInBackground(id, savedImage, ownerId);
+
     return ImageItem(
       id: id,
       ownerId: ownerId,
@@ -146,8 +177,23 @@ class FirebaseFilesRepository implements FilesRepository {
       sharedWith: const [],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
-      imagePathOrUrl: url,
+      imagePathOrUrl: savedImage.path,
     );
+  }
+
+  Future<void> _uploadImageInBackground(String id, File file, String ownerId) async {
+    try {
+      final ref = _storage.ref('noteImages/$id/${path.basename(file.path)}');
+      await ref.putFile(file); // This might hang or fail if offline
+      final url = await ref.getDownloadURL();
+
+      await _entries.doc(id).update({
+        'imageUrl': url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Upload failed for $id, keeping local: $e');
+    }
   }
 
   @override
@@ -170,18 +216,23 @@ class FirebaseFilesRepository implements FilesRepository {
 
   @override
   Future<bool> acquireLock({required String noteId, required String userId}) async {
-    return _db.runTransaction((tx) async {
-      final ref = _entries.doc(noteId);
-      final snap = await tx.get(ref);
-      if (!snap.exists) return false;
-      final cur = snap.data()!;
-      final lockedBy = cur['lockedByUserId'] as String?;
-      if (lockedBy == null || lockedBy == userId) {
-        tx.update(ref, {'lockedByUserId': userId, 'updatedAt': FieldValue.serverTimestamp()});
-        return true;
-      }
-      return false;
-    });
+    try {
+      return await _db.runTransaction((tx) async {
+        final ref = _entries.doc(noteId);
+        final snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        final cur = snap.data()!;
+        final lockedBy = cur['lockedByUserId'] as String?;
+        if (lockedBy == null || lockedBy == userId) {
+          tx.update(ref, {'lockedByUserId': userId, 'updatedAt': FieldValue.serverTimestamp()});
+          return true;
+        }
+        return false;
+      });
+    } catch (e) {
+      print('Lock acquisition failed (offline?): $e');
+      return true;
+    }
   }
 
   @override

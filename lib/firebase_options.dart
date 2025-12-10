@@ -41,10 +41,7 @@ class DefaultFirebaseOptions {
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return android;
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -59,4 +56,5 @@ class DefaultFirebaseOptions {
     projectId: 'edu-notes-upb',
     storageBucket: 'edu-notes-upb.firebasestorage.app',
   );
+
 }

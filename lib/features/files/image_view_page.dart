@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/files_repository.dart';
 import '../../data/models.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../auth/auth_cubit.dart';
 import 'files_cubit.dart';
 
@@ -21,7 +22,18 @@ class ImageViewPage extends StatelessWidget {
       body: Center(
         child: isFile
             ? Image.file(File(e.imagePathOrUrl), fit: BoxFit.contain)
-            : Image.network(e.imagePathOrUrl, fit: BoxFit.contain),
+            : CachedNetworkImage(
+          imageUrl: e.imagePathOrUrl,
+          fit: BoxFit.contain,
+          placeholder: (context, url) => const CircularProgressIndicator(),
+          errorWidget: (context, url, error) => const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+              Text('Image not available offline'),
+            ],
+          ),
+        ),
       ),
     );
   }
