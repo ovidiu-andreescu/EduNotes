@@ -45,6 +45,15 @@ class _HomeShellState extends State<_HomeShell> {
   int idx = 0;
 
   @override
+  void initState() {
+    super.initState();
+    final authState = context.read<AuthCubit>().state;
+    if (authState is Authenticated) {
+      context.read<FilesCubit>().refresh(authState.user.id, authState.user.email);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = const [MyFilesPage(), SharedWithMePage()];
     return Scaffold(

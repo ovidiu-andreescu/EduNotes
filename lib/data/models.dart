@@ -38,6 +38,18 @@ abstract class EntryBase extends Equatable {
     required this.updatedAt,
   });
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': type == EntryType.note ? 'note' : 'image',
+      'ownerId': ownerId,
+      'title': title,
+      'sharedWith': sharedWith,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+    };
+  }
+
   EntryBase copyBase({
     String? title,
     List<String>? sharedWith,
@@ -62,6 +74,27 @@ class TextNote extends EntryBase {
     required this.content,
     this.lockedByUserId,
   }) : super(type: EntryType.note);
+
+  @override
+  Map<String, dynamic> toJson() {
+    final m = super.toJson();
+    m['content'] = content;
+    m['lockedByUserId'] = lockedByUserId;
+    return m;
+  }
+
+  factory TextNote.fromJson(Map<String, dynamic> json) {
+    return TextNote(
+      id: json['id'],
+      ownerId: json['ownerId'],
+      title: json['title'],
+      sharedWith: List<String>.from(json['sharedWith'] ?? []),
+      createdAt: DateTime.parse(json['createdAt']),
+      updatedAt: DateTime.parse(json['updatedAt']),
+      content: json['content'] ?? '',
+      lockedByUserId: json['lockedByUserId'],
+    );
+  }
 
   TextNote copyWith({
     String? title,
@@ -99,6 +132,25 @@ class ImageItem extends EntryBase {
     required super.updatedAt,
     required this.imagePathOrUrl,
   }) : super(type: EntryType.image);
+
+  @override
+  Map<String, dynamic> toJson() {
+    final m = super.toJson();
+    m['imageUrl'] = imagePathOrUrl;
+    return m;
+  }
+
+  factory ImageItem.fromJson(Map<String, dynamic> json) {
+    return ImageItem(
+      id: json['id'],
+      ownerId: json['ownerId'],
+      title: json['title'],
+      sharedWith: List<String>.from(json['sharedWith'] ?? []),
+      createdAt: DateTime.parse(json['createdAt']),
+      updatedAt: DateTime.parse(json['updatedAt']),
+      imagePathOrUrl: json['imageUrl'] ?? '',
+    );
+  }
 
   ImageItem copyWith({
     String? title,

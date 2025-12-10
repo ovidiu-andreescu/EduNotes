@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'auth_cubit.dart';
@@ -15,6 +16,42 @@ class _LoginPageState extends State<LoginPage> {
   final passC = TextEditingController();
   bool loading = false;
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOfflineAndAutoLogin();
+  }
+
+  Future<void> _checkOfflineAndAutoLogin() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        return;
+      }
+    } on SocketException catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        loading = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No internet detected. Logging in as Guest automatically...'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.orange,
+        ),
+      );
+
+      // Give the user a brief moment to read the message, then login
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        context.read<AuthCubit>().signInAnonymously();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +83,12 @@ class _LoginPageState extends State<LoginPage> {
                   }
                 },
                 child: Text(loading ? 'Signing in...' : 'Sign in'),
+              ),
+              TextButton(
+                onPressed: loading
+                    ? null
+                    : () => context.read<AuthCubit>().signInAnonymously(),
+                child: const Text('Continue as Guest'),
               ),
               TextButton(
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUpPage())),

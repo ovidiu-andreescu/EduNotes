@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -18,14 +19,15 @@ class FirebaseFilesRepository implements FilesRepository {
   StreamSubscription? _ownSub, _sharedSub;
   String? _uid;
   String? _email;
+  bool _isOfflineMode = false;
 
   CollectionReference<Map<String, dynamic>> get _entries => _db.collection('entries');
 
   @override
   void setActiveUser(String? uid, String? email) {
-    if (_uid == uid && _email == email) return;
     _uid = uid;
     _email = email;
+    _isOfflineMode = (uid == 'offline-guest');
 
     _ownSub?.cancel();
     _sharedSub?.cancel();
@@ -36,28 +38,109 @@ class FirebaseFilesRepository implements FilesRepository {
       return;
     }
 
-    _ownSub = _entries.where('ownerId', isEqualTo: uid).snapshots().listen(_applySnap);
+    if (_isOfflineMode) {
+      _loadLocalOfflineFile();
+    } else {
+      _migrateOfflineData(uid);
 
-    if (email != null) {
-      _sharedSub = _entries.where('sharedWith', arrayContains: email).snapshots().listen(_applySnap);
+      _ownSub = _entries.where('ownerId', isEqualTo: uid).snapshots().listen(_applySnap);
+      if (email != null) {
+        _sharedSub = _entries.where('sharedWith', arrayContains: email).snapshots().listen(_applySnap);
+      }
+
+      _loadFromCache(uid, email);
     }
-
-    _syncPendingUploads(uid);
   }
 
-  Future<void> _syncPendingUploads(String uid) async {
-    final snap = await _entries
-        .where('ownerId', isEqualTo: uid)
-        .where('type', isEqualTo: 'image')
-        .get(const GetOptions(source: Source.cache));
 
-    for (final doc in snap.docs) {
-      final url = doc.data()['imageUrl'] as String? ?? '';
-      if (url.startsWith('/')) {
-        final file = File(url);
-        if (await file.exists()) {
-          _uploadImageInBackground(doc.id, file, uid);
+  Future<File> get _localFile async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/offline_guest_data.json');
+  }
+
+  Future<void> _loadLocalOfflineFile() async {
+    try {
+      final file = await _localFile;
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final List<dynamic> jsonList = jsonDecode(content);
+
+        for (final item in jsonList) {
+          final type = item['type'];
+          if (type == 'note') {
+            final note = TextNote.fromJson(item);
+            _cache[note.id] = note;
+          } else if (type == 'image') {
+            final img = ImageItem.fromJson(item);
+            _cache[img.id] = img;
+          }
         }
+      }
+    } catch (e) {
+      print('Error loading offline file: $e');
+    } finally {
+      _changes.add(null);
+    }
+  }
+
+  Future<void> _saveToLocalOfflineFile() async {
+    if (!_isOfflineMode) return;
+    try {
+      final file = await _localFile;
+      final jsonList = _cache.values.map((e) => e.toJson()).toList();
+      await file.writeAsString(jsonEncode(jsonList));
+    } catch (e) {
+      print('Error saving offline file: $e');
+    }
+  }
+
+
+  Future<void> _loadFromCache(String uid, String? email) async {
+    try {
+      final mySnap = await _entries
+          .where('ownerId', isEqualTo: uid)
+          .get(const GetOptions(source: Source.cache));
+
+      _processSnapshotData(mySnap);
+
+      if (email != null) {
+        final sharedSnap = await _entries
+            .where('sharedWith', arrayContains: email)
+            .get(const GetOptions(source: Source.cache));
+        _processSnapshotData(sharedSnap);
+      }
+    } catch (e) {
+      print('Cache load error: $e');
+    } finally {
+      _changes.add(null);
+    }
+  }
+
+  void _processSnapshotData(QuerySnapshot<Map<String, dynamic>> snap) {
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final id = doc.id;
+      final type = data['type'] as String? ?? 'note';
+      // ... same parsing logic as _applySnap ...
+      final ownerId = data['ownerId'] as String;
+      final title = data['title'] as String? ?? '';
+      final sharedWith = List<String>.from(data['sharedWith'] ?? const []);
+      final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      final updatedAt = (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+
+      if (type == 'image') {
+        _cache[id] = ImageItem(
+          id: id, ownerId: ownerId, title: title, sharedWith: sharedWith,
+          createdAt: createdAt, updatedAt: updatedAt,
+          imagePathOrUrl: data['imageUrl'] as String? ?? '',
+        );
+      } else {
+        _cache[id] = TextNote(
+          id: id, ownerId: ownerId, title: title, sharedWith: sharedWith,
+          createdAt: createdAt, updatedAt: updatedAt,
+          content: data['content'] as String? ?? '',
+          lockedByUserId: data['lockedByUserId'] as String?,
+        );
       }
     }
   }
@@ -81,22 +164,14 @@ class FirebaseFilesRepository implements FilesRepository {
 
       if (type == 'image') {
         _cache[id] = ImageItem(
-          id: id,
-          ownerId: ownerId,
-          title: title,
-          sharedWith: sharedWith,
-          createdAt: createdAt,
-          updatedAt: updatedAt,
+          id: id, ownerId: ownerId, title: title, sharedWith: sharedWith,
+          createdAt: createdAt, updatedAt: updatedAt,
           imagePathOrUrl: data['imageUrl'] as String? ?? '',
         );
       } else {
         _cache[id] = TextNote(
-          id: id,
-          ownerId: ownerId,
-          title: title,
-          sharedWith: sharedWith,
-          createdAt: createdAt,
-          updatedAt: updatedAt,
+          id: id, ownerId: ownerId, title: title, sharedWith: sharedWith,
+          createdAt: createdAt, updatedAt: updatedAt,
           content: data['content'] as String? ?? '',
           lockedByUserId: data['lockedByUserId'] as String?,
         );
@@ -105,83 +180,33 @@ class FirebaseFilesRepository implements FilesRepository {
     _changes.add(null);
   }
 
-  @override
-  Stream<void> watchAll() => _changes.stream;
+  Future<void> _migrateOfflineData(String realUserId) async {
+    final file = await _localFile;
+    if (!await file.exists()) return;
 
-  @override
-  List<EntryBase> myFiles(String uid) =>
-      _cache.values.where((e) => e.ownerId == uid).toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    print('Found offline data! Migrating to user $realUserId...');
+    try {
+      final content = await file.readAsString();
+      final List<dynamic> jsonList = jsonDecode(content);
 
-  @override
-  List<EntryBase> sharedWithMe(String email) =>
-      _cache.values.where((e) => e.sharedWith.contains(email)).toList()
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-  @override
-  EntryBase getById(String id) => _cache[id]!;
-
-  @override
-  Future<TextNote> createNote({required String ownerId, required String title}) async {
-    final ref = _entries.doc();
-    final now = FieldValue.serverTimestamp();
-    await ref.set({
-      'type': 'note',
-      'ownerId': ownerId,
-      'title': title,
-      'sharedWith': <String>[],
-      'content': '',
-      'lockedByUserId': null,
-      'createdAt': now,
-      'updatedAt': now,
-    });
-    return TextNote(
-      id: ref.id,
-      ownerId: ownerId,
-      title: title,
-      sharedWith: const [],
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      content: '',
-    );
+      for (final item in jsonList) {
+        final docRef = _entries.doc();
+        final data = Map<String, dynamic>.from(item);
+        data['ownerId'] = realUserId;
+        data['createdAt'] = FieldValue.serverTimestamp();
+        data['updatedAt'] = FieldValue.serverTimestamp();
+        await docRef.set(data);
+      }
+      await file.delete();
+      print('Migration complete.');
+    } catch (e) {
+      print('Migration failed: $e');
+    }
   }
 
-  @override
-  Future<ImageItem> createImage({
-    required String ownerId,
-    required String title,
-    required String imagePathOrUrl,
-  }) async {
-    final ref = _entries.doc();
-    final id = ref.id;
-    final appDir = await getApplicationDocumentsDirectory();
-    final fileName = '${id}_${path.basename(imagePathOrUrl)}';
-    final savedImage = await File(imagePathOrUrl).copy('${appDir.path}/$fileName');
-
-    final now = FieldValue.serverTimestamp();
-    await ref.set({
-      'type': 'image',
-      'ownerId': ownerId,
-      'title': title,
-      'sharedWith': <String>[],
-      'imageUrl': savedImage.path,
-      'createdAt': now,
-      'updatedAt': now,
-    });
-
-    _uploadImageInBackground(id, savedImage, ownerId);
-
-    return ImageItem(
-      id: id,
-      ownerId: ownerId,
-      title: title,
-      sharedWith: const [],
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      imagePathOrUrl: savedImage.path,
-    );
-  }
-
+  // --- UPLOAD HELPER ---
   Future<void> _uploadImageInBackground(String id, File file, String ownerId) async {
+    if (_isOfflineMode) return;
     try {
       final ref = _storage.ref('noteImages/$id/${path.basename(file.path)}');
       await ref.putFile(file);
@@ -191,12 +216,107 @@ class FirebaseFilesRepository implements FilesRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('Upload failed for $id, keeping local: $e');
+      print('Background upload failed (offline?): $e');
     }
   }
 
   @override
+  Stream<void> watchAll() => _changes.stream;
+
+  @override
+  List<EntryBase> myFiles(String uid) => _cache.values.toList() // Simplified for local view
+    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+  @override
+  List<EntryBase> sharedWithMe(String email) => _cache.values.where((e) => e.sharedWith.contains(email)).toList()
+    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+  @override
+  EntryBase getById(String id) => _cache[id]!;
+
+  @override
+  Future<bool> checkUserExists(String email) async {
+    if (_isOfflineMode) return true;
+    try {
+      final snap = await _db.collection('users').where('email', isEqualTo: email).limit(1).get();
+      return snap.docs.isNotEmpty;
+    } catch (_) { return false; }
+  }
+
+  @override
+  Future<TextNote> createNote({required String ownerId, required String title}) async {
+    if (_isOfflineMode) {
+      final note = TextNote(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        ownerId: ownerId, title: title, sharedWith: const [],
+        createdAt: DateTime.now(), updatedAt: DateTime.now(), content: '',
+      );
+      _cache[note.id] = note;
+      _changes.add(null);
+      await _saveToLocalOfflineFile();
+      return note;
+    }
+
+    final ref = _entries.doc();
+    final now = FieldValue.serverTimestamp();
+    await ref.set({
+      'type': 'note', 'ownerId': ownerId, 'title': title, 'sharedWith': <String>[],
+      'content': '', 'lockedByUserId': null, 'createdAt': now, 'updatedAt': now,
+    });
+    return TextNote(
+      id: ref.id, ownerId: ownerId, title: title, sharedWith: const [],
+      createdAt: DateTime.now(), updatedAt: DateTime.now(), content: '',
+    );
+  }
+
+  @override
+  Future<ImageItem> createImage({
+    required String ownerId,
+    required String title,
+    required String imagePathOrUrl,
+  }) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(imagePathOrUrl)}';
+    final savedImage = await File(imagePathOrUrl).copy('${appDir.path}/$fileName');
+
+    if (_isOfflineMode) {
+      final item = ImageItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        ownerId: ownerId, title: title, sharedWith: const [],
+        createdAt: DateTime.now(), updatedAt: DateTime.now(),
+        imagePathOrUrl: savedImage.path,
+      );
+      _cache[item.id] = item;
+      _changes.add(null);
+      await _saveToLocalOfflineFile();
+      return item;
+    }
+
+    final ref = _entries.doc();
+    final id = ref.id;
+    final now = FieldValue.serverTimestamp();
+    await ref.set({
+      'type': 'image', 'ownerId': ownerId, 'title': title, 'sharedWith': <String>[],
+      'imageUrl': savedImage.path, 'createdAt': now, 'updatedAt': now,
+    });
+
+    _uploadImageInBackground(id, savedImage, ownerId);
+
+    return ImageItem(
+      id: id, ownerId: ownerId, title: title, sharedWith: const [],
+      createdAt: DateTime.now(), updatedAt: DateTime.now(),
+      imagePathOrUrl: savedImage.path,
+    );
+  }
+
+  @override
   Future<void> deleteEntry(String id) async {
+    if (_isOfflineMode) {
+      _cache.remove(id);
+      _changes.add(null);
+      await _saveToLocalOfflineFile();
+      return;
+    }
     await _entries.doc(id).delete();
   }
 
@@ -206,6 +326,15 @@ class FirebaseFilesRepository implements FilesRepository {
     required String newContent,
     required String editorUserId,
   }) async {
+    if (_isOfflineMode) {
+      final old = _cache[noteId];
+      if (old is TextNote) {
+        _cache[noteId] = old.copyWith(content: newContent, updatedAt: DateTime.now());
+        _changes.add(null);
+        await _saveToLocalOfflineFile();
+      }
+      return;
+    }
     await _entries.doc(noteId).update({
       'content': newContent,
       'lockedByUserId': null,
@@ -215,21 +344,20 @@ class FirebaseFilesRepository implements FilesRepository {
 
   @override
   Future<bool> acquireLock({required String noteId, required String userId}) async {
+    if (_isOfflineMode) return true;
     try {
       return await _db.runTransaction((tx) async {
         final ref = _entries.doc(noteId);
         final snap = await tx.get(ref);
-
         if (!snap.exists) return false;
-
         final cur = snap.data()!;
         final lockedBy = cur['lockedByUserId'] as String?;
+        final updatedAt = (cur['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
 
-        if (lockedBy == null || lockedBy == userId) {
-          tx.update(ref, {
-            'lockedByUserId': userId,
-            'updatedAt': FieldValue.serverTimestamp()
-          });
+        final isStale = DateTime.now().difference(updatedAt).inMinutes > 10;
+
+        if (lockedBy == null || lockedBy == userId || isStale) {
+          tx.update(ref, {'lockedByUserId': userId, 'updatedAt': FieldValue.serverTimestamp()});
           return true;
         }
         return false;
@@ -242,6 +370,7 @@ class FirebaseFilesRepository implements FilesRepository {
 
   @override
   Future<void> releaseLock({required String noteId, required String userId}) async {
+    if (_isOfflineMode) return;
     await _entries.doc(noteId).update({
       'lockedByUserId': null,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -250,6 +379,7 @@ class FirebaseFilesRepository implements FilesRepository {
 
   @override
   Future<void> shareWithUser({required String entryId, required String email}) async {
+    if (_isOfflineMode) throw Exception("Cannot share in Guest Mode");
     await _entries.doc(entryId).update({
       'sharedWith': FieldValue.arrayUnion([email]),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -258,6 +388,7 @@ class FirebaseFilesRepository implements FilesRepository {
 
   @override
   Future<void> unshareWithUser({required String entryId, required String email}) async {
+    if (_isOfflineMode) return;
     await _entries.doc(entryId).update({
       'sharedWith': FieldValue.arrayRemove([email]),
       'updatedAt': FieldValue.serverTimestamp(),

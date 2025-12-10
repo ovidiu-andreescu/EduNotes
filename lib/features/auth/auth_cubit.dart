@@ -47,6 +47,18 @@ class AuthCubit extends Cubit<AuthState> {
     emit(Authenticated(_toUserModel(cred.user!)));
   }
 
+// lib/features/auth/auth_cubit.dart
+
+  Future<void> signInAnonymously() async {
+    const offlineUser = UserModel(
+      id: 'offline-guest',
+      email: 'guest@offline',
+      displayName: 'Guest (Local)',
+      password: '',
+    );
+    emit(Authenticated(offlineUser));
+  }
+
   Future<void> signUp(String email, String password) async {
     final cred = await _auth.createUserWithEmailAndPassword(email: email, password: password);
     if (cred.user != null && (cred.user!.displayName == null || cred.user!.displayName!.isEmpty)) {

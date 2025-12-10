@@ -33,10 +33,11 @@ class FilesCubit extends Cubit<FilesState> {
   Future<void> refresh([String? userId, String? email]) async {
     _uid = userId;
     _email = email;
-    repo.setActiveUser(_uid, _email);
 
     _sub?.cancel();
+
     if (_uid == null) {
+      repo.setActiveUser(null, null); // Clear repo state
       emit(state.copyWith(myFiles: [], sharedWithMe: [], loading: false));
       return;
     }
@@ -46,6 +47,8 @@ class FilesCubit extends Cubit<FilesState> {
       final shared = _email != null ? repo.sharedWithMe(_email!) : <EntryBase>[];
       emit(FilesState(myFiles: my, sharedWithMe: shared, loading: false));
     });
+
+    repo.setActiveUser(_uid, _email);
   }
 
   @override
