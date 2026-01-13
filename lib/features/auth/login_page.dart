@@ -26,7 +26,6 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _checkOfflineAndAutoLogin() async {
     try {
       final result = await InternetAddress.lookup('google.com');
-
       if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
         return;
       }
@@ -39,13 +38,11 @@ class _LoginPageState extends State<LoginPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No internet detected. Logging in as Guest automatically...'),
+          content: Text('No internet connection. Logging in as Guest...'),
           duration: Duration(seconds: 2),
-          backgroundColor: Colors.orange,
         ),
       );
 
-      // Give the user a brief moment to read the message, then login
       await Future.delayed(const Duration(seconds: 1));
       if (mounted) {
         context.read<AuthCubit>().signInAnonymously();
@@ -56,45 +53,87 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: emailC, decoration: const InputDecoration(labelText: 'Email')),
-              const SizedBox(height: 12),
-              TextField(controller: passC, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
-              const SizedBox(height: 16),
-              if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: loading
-                    ? null
-                    : () async {
-                  setState(() { loading = true; error = null; });
-                  try {
-                    await context.read<AuthCubit>().signIn(emailC.text.trim(), passC.text);
-                  } catch (e) {
-                    setState(() => error = e.toString());
-                  } finally {
-                    if (mounted) setState(() => loading = false);
-                  }
-                },
-                child: Text(loading ? 'Signing in...' : 'Sign in'),
-              ),
-              TextButton(
-                onPressed: loading
-                    ? null
-                    : () => context.read<AuthCubit>().signInAnonymously(),
-                child: const Text('Continue as Guest'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUpPage())),
-                child: const Text('Create account'),
-              ),
-            ]),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.school, size: 80, color: Colors.blueGrey),
+                const SizedBox(height: 24),
+                Text(
+                  'Welcome Back',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueGrey[800],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: emailC,
+                  decoration: const InputDecoration(
+                    labelText: 'Email Address',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passC,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 24),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      error!,
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                FilledButton(
+                  onPressed: loading
+                      ? null
+                      : () async {
+                    setState(() { loading = true; error = null; });
+                    try {
+                      await context.read<AuthCubit>().signIn(emailC.text.trim(), passC.text);
+                    } catch (e) {
+                      setState(() => error = e.toString());
+                    } finally {
+                      if (mounted) setState(() => loading = false);
+                    }
+                  },
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: Text(loading ? 'Signing in...' : 'Sign In'),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                  onPressed: loading
+                      ? null
+                      : () => context.read<AuthCubit>().signInAnonymously(),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Continue as Guest'),
+                ),
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUpPage())),
+                  child: const Text("Don't have an account? Create one"),
+                ),
+              ],
+            ),
           ),
         ),
       ),

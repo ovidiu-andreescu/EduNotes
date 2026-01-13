@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'features/auth/auth_cubit.dart';
@@ -5,7 +6,6 @@ import 'features/auth/login_page.dart';
 import 'features/files/my_files_page.dart';
 import 'features/files/shared_with_me_page.dart';
 import 'features/files/files_cubit.dart';
-import 'dart:io';
 
 class EduNotesApp extends StatelessWidget {
   const EduNotesApp({super.key});
@@ -22,8 +22,16 @@ class EduNotesApp extends StatelessWidget {
         }
       },
       child: MaterialApp(
-        title: 'EduNotes (Mock)',
-        theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
+        title: 'EduNotes',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: Colors.blueGrey,
+          inputDecorationTheme: const InputDecorationTheme(
+            border: OutlineInputBorder(),
+            filled: true,
+          ),
+        ),
         home: BlocBuilder<AuthCubit, AuthState>(
           builder: (context, state) {
             if (state is Authenticated) return const _HomeShell();
@@ -71,11 +79,13 @@ class _HomeShellState extends State<_HomeShell> {
       final shouldLogout = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
+          icon: const Icon(Icons.wifi_off, size: 48, color: Colors.orange),
           title: const Text('Offline Warning'),
           content: const Text(
-              'You are currently offline.\n\n'
-                  'Any changes you made recently have not been saved to the cloud yet.\n\n'
-                  'If you log out now, you will lose the changes.\n\n'
+            'You are currently offline.\n\n'
+                'Any changes you made recently have not been saved to the cloud yet.\n\n'
+                'If you log out now, these changes will be lost.',
+            textAlign: TextAlign.center,
           ),
           actions: [
             TextButton(
@@ -103,6 +113,7 @@ class _HomeShellState extends State<_HomeShell> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('EduNotes'),
+        centerTitle: true,
         actions: [
           IconButton(
             tooltip: 'Logout',
@@ -116,8 +127,16 @@ class _HomeShellState extends State<_HomeShell> {
         selectedIndex: idx,
         onDestinationSelected: (i) => setState(() => idx = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.folder), label: 'My files'),
-          NavigationDestination(icon: Icon(Icons.folder_shared), label: 'Shared'),
+          NavigationDestination(
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder),
+            label: 'My files',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.folder_shared_outlined),
+            selectedIcon: Icon(Icons.folder_shared),
+            label: 'Shared',
+          ),
         ],
       ),
     );
