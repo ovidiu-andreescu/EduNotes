@@ -20,6 +20,7 @@ class FirebaseFilesRepository implements FilesRepository {
   String? _uid;
   String? _email;
   bool _isOfflineMode = false;
+  bool _isMigrating = false;
 
   CollectionReference<Map<String, dynamic>> get _entries => _db.collection('entries');
 
@@ -51,7 +52,6 @@ class FirebaseFilesRepository implements FilesRepository {
       _loadFromCache(uid, email);
     }
   }
-
 
   Future<File> get _localFile async {
     final dir = await getApplicationDocumentsDirectory();
@@ -94,7 +94,6 @@ class FirebaseFilesRepository implements FilesRepository {
     }
   }
 
-
   Future<void> _loadFromCache(String uid, String? email) async {
     try {
       final mySnap = await _entries
@@ -121,7 +120,7 @@ class FirebaseFilesRepository implements FilesRepository {
       final data = doc.data();
       final id = doc.id;
       final type = data['type'] as String? ?? 'note';
-      // ... same parsing logic as _applySnap ...
+
       final ownerId = data['ownerId'] as String;
       final title = data['title'] as String? ?? '';
       final sharedWith = List<String>.from(data['sharedWith'] ?? const []);
@@ -181,10 +180,13 @@ class FirebaseFilesRepository implements FilesRepository {
   }
 
   Future<void> _migrateOfflineData(String realUserId) async {
+    if (_isMigrating) return;
+
     final file = await _localFile;
     if (!await file.exists()) return;
 
-    print('Found offline data! Migrating to user $realUserId...');
+    _isMigrating = true;
+
     try {
       final content = await file.readAsString();
       final List<dynamic> jsonList = jsonDecode(content);
@@ -198,13 +200,13 @@ class FirebaseFilesRepository implements FilesRepository {
         await docRef.set(data);
       }
       await file.delete();
-      print('Migration complete.');
     } catch (e) {
       print('Migration failed: $e');
+    } finally {
+      _isMigrating = false;
     }
   }
 
-  // --- UPLOAD HELPER ---
   Future<void> _uploadImageInBackground(String id, File file, String ownerId) async {
     if (_isOfflineMode) return;
     try {
@@ -224,7 +226,7 @@ class FirebaseFilesRepository implements FilesRepository {
   Stream<void> watchAll() => _changes.stream;
 
   @override
-  List<EntryBase> myFiles(String uid) => _cache.values.toList() // Simplified for local view
+  List<EntryBase> myFiles(String uid) => _cache.values.toList()
     ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
   @override
@@ -233,15 +235,6 @@ class FirebaseFilesRepository implements FilesRepository {
 
   @override
   EntryBase getById(String id) => _cache[id]!;
-
-  @override
-  Future<bool> checkUserExists(String email) async {
-    if (_isOfflineMode) return true;
-    try {
-      final snap = await _db.collection('users').where('email', isEqualTo: email).limit(1).get();
-      return snap.docs.isNotEmpty;
-    } catch (_) { return false; }
-  }
 
   @override
   Future<TextNote> createNote({required String ownerId, required String title}) async {

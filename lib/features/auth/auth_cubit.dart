@@ -39,15 +39,12 @@ class AuthCubit extends Cubit<AuthState> {
     id: u.uid,
     email: u.email ?? '',
     displayName: u.displayName ?? (u.email?.split('@').first ?? 'user'),
-    password: '', // unused with Firebase
+    password: '',
   );
 
   Future<void> signIn(String email, String password) async {
-    final cred = await _auth.signInWithEmailAndPassword(email: email, password: password);
-    emit(Authenticated(_toUserModel(cred.user!)));
+    await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
-
-// lib/features/auth/auth_cubit.dart
 
   Future<void> signInAnonymously() async {
     const offlineUser = UserModel(
@@ -64,7 +61,6 @@ class AuthCubit extends Cubit<AuthState> {
     if (cred.user != null && (cred.user!.displayName == null || cred.user!.displayName!.isEmpty)) {
       await cred.user!.updateDisplayName(email.split('@').first);
     }
-    emit(Authenticated(_toUserModel(cred.user!)));
   }
 
   void signOut() => _auth.signOut();
